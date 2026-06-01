@@ -1,12 +1,12 @@
 # Основной конфиг ассистента
 assistant:
   name: "LocalAI"
-  version: "0.1.0"
+  version: "0.2.0"
 
 # Настройки LLM
 llm:
   backend: "ollama"
-  model: "qwen2.5:7b"  # Или любая другая, которая у вас есть
+  model: "t-tech/t-lite-it-2.1:q4_k_m"  # Или любая другая, которая у вас есть
   temperature: 0.7
   max_tokens: 2048
 
@@ -14,6 +14,7 @@ llm:
 memory:
   enabled: false
   vector_db_path: "data/chromadb"
+  top_k_memories: 3
 
 # Профиль производительности
 profile: "balanced"
