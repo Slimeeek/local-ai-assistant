@@ -6,7 +6,7 @@ assistant:
 # Настройки LLM
 llm:
   backend: "ollama"
-  model: "t-tech/t-lite-it-2.1:q4_k_m"  # Или любая другая, которая у вас есть
+  model: "rscr/vikhr_nemo_12b:Q4_K_M"  # Или любая другая, которая у вас есть
   temperature: 0.7
   max_tokens: 2048
 
