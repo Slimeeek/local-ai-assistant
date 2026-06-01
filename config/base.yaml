@@ -12,7 +12,7 @@ llm:
 
 # Настройки памяти (пока отключена)
 memory:
-  enabled: false
+  enabled: true
   vector_db_path: "data/chromadb"
   top_k_memories: 3
 
