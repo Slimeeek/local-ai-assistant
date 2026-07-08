@@ -21,4 +21,4 @@ source venv/bin/activate
 
 # Запускаем приложение
 echo " Запуск Local AI Assistant..."
-python run.py
+python -m src.main
