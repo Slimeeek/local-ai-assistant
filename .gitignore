@@ -1,0 +1,176 @@
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ============================================
+# Виртуальное окружение
+# ============================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================
+# IDE и редакторы
+# ============================================
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# PyCharm / JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*#
+.#*
+\#*#
+
+# ============================================
+# ОС
+# ============================================
+# Linux
+*~
+.Trash-*
+.nfs*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# ============================================
+# Тестирование и покрытие
+# ============================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ============================================
+# Jupyter Notebook
+# ============================================
+.ipynb_checkpoints
+*.ipynb
+
+# ============================================
+# Логи и временные файлы
+# ============================================
+*.log
+logs/
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ============================================
+# Данные и модели (не коммитим большие файлы)
+# ============================================
+*.bin
+*.pt
+*.pth
+*.onnx
+*.h5
+*.pb
+models/
+!models/.gitkeep
+
+# ============================================
+# Секреты и конфиги с чувствительными данными
+# ============================================
+.env
+.env.local
+.env.*.local
+*.secret
+secrets/
+
+# Локальные настройки (персональные)
+config/settings.local.yaml
+config/local.yaml
+*.local.yaml
+
+# ============================================
+# База данных и кэш
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+vector_db/
+chroma/
+!vector_db/.gitkeep
+!chroma/.gitkeep
+
+# ============================================
+# Obsidian vault (если будет использоваться)
+# ============================================
+obsidian_vault/
+!obsidian_vault/.gitkeep
+
+# ============================================
+# Прочее
+# ============================================
+*.bak
+*.backup
+*.orig
+*.rej
+*.patch

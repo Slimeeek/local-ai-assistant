@@ -1,0 +1,17 @@
+# Настройки LLM
+llm:
+  provider: "ollama"
+  model: "llama3.2:3b"
+  host: "http://localhost:11434"
+  timeout: 120
+
+# Настройки UI
+ui:
+  theme: "dark"
+  window_size: [800, 600]
+  font_size: 14
+
+# Память (пока отключено)
+memory:
+  enabled: false
+  vault_path: "./obsidian_vault"
