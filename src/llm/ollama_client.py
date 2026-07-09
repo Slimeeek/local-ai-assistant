@@ -1,5 +1,5 @@
 import ollama
-from typing import Generator
+from typing import Generator, List, Dict, Optional
 from .base import BaseLLM
 
 class OllamaClient(BaseLLM):
@@ -8,22 +8,44 @@ class OllamaClient(BaseLLM):
         self.host = host
         self.client = ollama.Client(host=host)
     
-    def generate(self, prompt: str, system_prompt: str = "") -> str:
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+    def generate(
+        self, 
+        messages: List[Dict[str, str]], 
+        system_prompt: str = ""
+    ) -> str:
+        """
+        Генерация ответа с историей сообщений.
         
-        response = self.client.chat(model=self.model, messages=messages)
+        Args:
+            messages: Список сообщений [{"role": "user", "content": "..."}, ...]
+            system_prompt: Системный промпт (опционально)
+        """
+        full_messages = []
+        
+        # Добавляем system prompt если есть
+        if system_prompt:
+            full_messages.append({"role": "system", "content": system_prompt})
+        
+        # Добавляем историю сообщений
+        full_messages.extend(messages)
+        
+        response = self.client.chat(model=self.model, messages=full_messages)
         return response["message"]["content"]
     
-    def stream(self, prompt: str, system_prompt: str = "") -> Generator[str, None, None]:
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+    def stream(
+        self, 
+        messages: List[Dict[str, str]], 
+        system_prompt: str = ""
+    ) -> Generator[str, None, None]:
+        """Стриминг ответа с историей"""
+        full_messages = []
         
-        stream = self.client.chat(model=self.model, messages=messages, stream=True)
+        if system_prompt:
+            full_messages.append({"role": "system", "content": system_prompt})
+        
+        full_messages.extend(messages)
+        
+        stream = self.client.chat(model=self.model, messages=full_messages, stream=True)
         for chunk in stream:
             if "message" in chunk and "content" in chunk["message"]:
                 yield chunk["message"]["content"]
@@ -39,22 +61,26 @@ class OllamaClient(BaseLLM):
         """Получить список доступных моделей"""
         try:
             response = self.client.list()
-            print(f"[DEBUG] Ollama response: {response}")
             
-            # Пробуем разные варианты структуры ответа
-            if "models" in response:
-                models = response["models"]
-            elif "data" in response:
-                models = response["data"]
+            # Новый формат ответа ollama (объект с полем models)
+            if hasattr(response, 'models'):
+                models = response.models
+            elif isinstance(response, dict):
+                models = response.get("models", [])
             else:
-                print(f"[ERROR] Неизвестная структура ответа: {response.keys()}")
+                print(f"[ERROR] Неизвестный формат ответа: {type(response)}")
                 return []
             
             model_names = []
             for m in models:
-                print(f"[DEBUG] Model entry: {m}")
-                # Пробуем разные ключи
-                name = m.get("name") or m.get("model") or m.get("modelName")
+                # Поддержка разных форматов
+                if hasattr(m, 'model'):
+                    name = m.model
+                elif isinstance(m, dict):
+                    name = m.get("name") or m.get("model") or m.get("modelName")
+                else:
+                    name = str(m)
+                
                 if name:
                     model_names.append(name)
             

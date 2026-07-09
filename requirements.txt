@@ -1,16 +1,14 @@
-# Основные зависимости
-ollama==0.4.7
-pyyaml==6.0.2
+# Local AI Assistant - Зависимости
 
-# GUI (выбирай один вариант)
-# Вариант 1: CustomTkinter (проще)
+# Работа с Ollama
+ollama==0.4.7
+
+# GUI
 customtkinter==5.2.2
 
-# Вариант 2: Flet (современнее)
-# flet==0.25.2
-
-# Вариант 3: PyQt6 (мощнее)
-# PyQt6==6.7.1
+# Конфигурация
+pyyaml==6.0.2
+python-dotenv==1.0.1
 
 # Утилиты
-python-dotenv==1.0.1
+requests==2.32.3
