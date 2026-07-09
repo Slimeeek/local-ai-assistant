@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from ..llm.ollama_client import OllamaClient
 from ..memory import HybridMemory
+from ..persona import PersonaManager
 
 class MainWindow(ctk.CTk):
     def __init__(self):
@@ -16,13 +17,12 @@ class MainWindow(ctk.CTk):
         
         self.llm = OllamaClient()
         self.memory = HybridMemory()
+        self.persona_manager = PersonaManager()
         
         self.current_session_history = []
         self.is_saving = False
         
-        self.base_system_prompt = """Ты полезный ИИ-ассистент с долговременной памятью. 
-ОТВЕЧАЙ СТРОГО НА РУССКОМ ЯЗЫКЕ.
-Будь естественным и дружелюбным.
+        self.base_system_prompt = """ОТВЕЧАЙ СТРОГО НА РУССКОМ ЯЗЫКЕ.
 
 ПРАВИЛА РАБОТЫ С ПАМЯТЬЮ:
 - Информация о пользователе (core) — всегда актуальна, используй естественно.
@@ -51,12 +51,12 @@ class MainWindow(ctk.CTk):
         
         stats = self.memory.get_stats()
         obsidian_stats = stats["obsidian"]
-        print(f"📊 Всего воспоминаний: {obsidian_stats['total_memories']}")
+        print(f" Всего воспоминаний: {obsidian_stats['total_memories']}")
         print(f"   По типам: {obsidian_stats['by_type']}")
         
         core = self.memory.get_core()
         if core:
-            print(f"\n👤 ЯДРО (core):")
+            print(f"\n ЯДРО (core):")
             for item in core:
                 level = item["metadata"].get("level", 3)
                 print(f"  [lvl {level}] {item['content'][:80]}")
@@ -90,19 +90,39 @@ class MainWindow(ctk.CTk):
         
         self._create_chat_panel(chat_frame)
         self._create_memory_panel(memory_frame)
+        
+        # ВАЖНО: вызываем ПОСЛЕ создания всех виджетов
+        self._refresh_personas_list()
     
     def _create_chat_panel(self, parent):
+        # === Верхняя панель: модель + личность ===
         top_frame = ctk.CTkFrame(parent)
         top_frame.pack(fill="x", padx=10, pady=5)
         
+        # Модель
         ctk.CTkLabel(top_frame, text="Модель:").pack(side="left", padx=5)
-        self.model_combo = ctk.CTkComboBox(top_frame, values=[], width=200, state="readonly")
+        self.model_combo = ctk.CTkComboBox(top_frame, values=[], width=180, state="readonly")
         self.model_combo.pack(side="left", padx=5)
         self.model_combo.set("Выберите модель")
         
         self.refresh_btn = ctk.CTkButton(top_frame, text="🔄", width=40, command=self._refresh_models)
         self.refresh_btn.pack(side="left", padx=5)
         
+        # Разделитель
+        ctk.CTkLabel(top_frame, text="│").pack(side="left", padx=5)
+        
+        # ЛИЧНОСТЬ
+        ctk.CTkLabel(top_frame, text="Личность:").pack(side="left", padx=5)
+        self.persona_combo = ctk.CTkComboBox(
+            top_frame, 
+            values=[],
+            width=220, 
+            state="readonly",
+            command=self._on_persona_changed
+        )
+        self.persona_combo.pack(side="left", padx=5)
+        
+        # Кнопки
         self.end_session_btn = ctk.CTkButton(
             top_frame, text="✅ Завершить и сохранить", width=160,
             command=self._end_session_and_save, fg_color="green"
@@ -112,10 +132,12 @@ class MainWindow(ctk.CTk):
         self.status_label = ctk.CTkLabel(top_frame, text="Проверка...")
         self.status_label.pack(side="right", padx=5)
         
+        # === Область чата ===
         self.chat_area = scrolledtext.ScrolledText(parent, wrap=ctk.WORD, font=("Arial", 12), bg="#2b2b2b", fg="#ffffff")
         self.chat_area.pack(fill="both", expand=True, padx=10, pady=5)
         self.chat_area.configure(state="disabled")
         
+        # === Поле ввода ===
         input_frame = ctk.CTkFrame(parent)
         input_frame.pack(fill="x", padx=10, pady=5)
         
@@ -128,6 +150,16 @@ class MainWindow(ctk.CTk):
     
     def _create_memory_panel(self, parent):
         ctk.CTkLabel(parent, text="🧠 Память", font=("Arial", 16, "bold")).pack(pady=10)
+        
+        # Информация о текущей личности
+        self.persona_info_label = ctk.CTkLabel(
+            parent, 
+            text="",
+            font=("Arial", 10),
+            wraplength=300,
+            justify="left"
+        )
+        self.persona_info_label.pack(fill="x", padx=10, pady=5)
         
         filter_frame = ctk.CTkFrame(parent)
         filter_frame.pack(fill="x", padx=10, pady=5)
@@ -147,9 +179,9 @@ class MainWindow(ctk.CTk):
         self.memory_search.pack(side="left", fill="x", expand=True, padx=5)
         self.memory_search.bind("<Return>", lambda e: self._search_memory())
         
-        ctk.CTkButton(search_frame, text="🔍", width=40, command=self._search_memory).pack(side="right", padx=5)
+        ctk.CTkButton(search_frame, text="", width=40, command=self._search_memory).pack(side="right", padx=5)
         
-        self.memory_list = scrolledtext.ScrolledText(parent, wrap=ctk.WORD, font=("Arial", 10), bg="#1e1e1e", fg="#ffffff", height=15)
+        self.memory_list = scrolledtext.ScrolledText(parent, wrap=ctk.WORD, font=("Arial", 10), bg="#1e1e1e", fg="#ffffff", height=12)
         self.memory_list.pack(fill="both", expand=True, padx=10, pady=5)
         self.memory_list.configure(state="disabled")
         
@@ -160,6 +192,60 @@ class MainWindow(ctk.CTk):
         ctk.CTkButton(btn_frame, text="🔄 Обновить", command=self._refresh_memory_list, width=150).pack(side="right", padx=5, pady=5)
         
         self._refresh_memory_list()
+    
+    def _refresh_personas_list(self):
+        """Обновляет список личностей в ComboBox"""
+        personas = self.persona_manager.list_personas()
+        values = [f"{p['emoji']} {p['name']}" for p in personas]
+        self.persona_combo.configure(values=values)
+        
+        # Устанавливаем текущую
+        current = self.persona_manager.get_current()
+        if current:
+            self.persona_combo.set(f"{current.get('emoji', '🤖')} {current['name']}")
+        
+        self._update_persona_info()
+    
+    def _on_persona_changed(self, choice):
+        """Обработчик смены личности"""
+        personas = self.persona_manager.list_personas()
+        for p in personas:
+            display_name = f"{p['emoji']} {p['name']}"
+            if display_name == choice:
+                old_persona = self.persona_manager.get_current()
+                if self.persona_manager.set_current(p["id"]):
+                    new_persona = self.persona_manager.get_current()
+                    print(f"\n🎭 Смена личности: {old_persona['name']} → {new_persona['name']}")
+                    
+                    # Показываем приветствие новой личности
+                    greeting = self.persona_manager.get_greeting()
+                    if greeting:
+                        self._append_message(new_persona["name"], greeting)
+                    
+                    self._update_persona_info()
+                break
+    
+    def _update_persona_info(self):
+        """Обновляет информацию о текущей личности в правой панели"""
+        # Защита от вызова до создания виджета
+        if not hasattr(self, 'persona_info_label'):
+            return
+        
+        persona = self.persona_manager.get_current()
+        if not persona:
+            self.persona_info_label.configure(text="")
+            return
+        
+        emoji = persona.get("emoji", "🤖")
+        name = persona.get("name", "Неизвестно")
+        description = persona.get("description", "")
+        style = persona.get("style", "")
+        
+        info_text = f"{emoji} {name}\n{description}"
+        if style:
+            info_text += f"\n\n🎨 Стиль: {style}"
+        
+        self.persona_info_label.configure(text=info_text)
     
     def _refresh_models(self):
         try:
@@ -184,20 +270,14 @@ class MainWindow(ctk.CTk):
             self.status_label.configure(text=f"❌ Ошибка: {str(e)}", text_color="red")
     
     def _build_system_prompt(self) -> str:
-        """Строит системный промпт. Core — ВСЕГДА."""
-        prompt = self.base_system_prompt
+        """Строит итоговый системный промпт с учётом личности"""
+        persona_prompt = self.persona_manager.build_system_prompt()
         
-        core_memories = self.memory.get_core()
-        if core_memories:
-            prompt += "\n\n=== ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ (ядро личности, всегда актуально) ===\n"
-            for mem in core_memories:
-                prompt += f"- {mem['content']}\n"
-            prompt += "=== КОНЕЦ ===\n"
-        
-        return prompt
+        if persona_prompt:
+            return f"{self.base_system_prompt}\n\n{persona_prompt}"
+        return self.base_system_prompt
     
     def _is_asking_about_past_dialogs(self, query: str) -> bool:
-        """Проверяет, спрашивает ли пользователь о прошлых разговорах"""
         keywords = [
             "о чём мы говорили", "что мы обсуждали", "помнишь разговор",
             "прошлый раз", "в прошлый раз", "раньше говорили",
@@ -234,9 +314,8 @@ class MainWindow(ctk.CTk):
                 full_conversation += f"{role}: {msg['content']}\n\n"
             
             print(f"✅ Текст готов ({len(full_conversation)} символов)")
-            self.after(0, lambda: self._append_message("Система", "🤖 Отправляю в LLM для анализа (1-3 минуты)..."))
+            self.after(0, lambda: self._append_message("Система", " Отправляю в LLM для анализа (1-3 минуты)..."))
             
-            # КРИТИЧЕСКИ ВАЖНО: промпт разделяет сырой диалог и извлечённые факты
             analysis_prompt = f"""Проанализируй диалог и извлеки ЗНАНИЯ в структурированной форме.
 
 ДИАЛОГ (СЫРОЙ МАТЕРИАЛ — это "артефакт", не факт):
@@ -248,53 +327,36 @@ class MainWindow(ctk.CTk):
     {{"content": "ТОЛЬКО факт о личности (имя, возраст, профессия, базовое предпочтение)", "artifact_sign": "факт|предпочтение", "level": 5, "tags": ["тег"]}}
   ],
   "facts": [
-    {{"content": "ИЗВЛЕЧЁННЫЙ ФАКТ в форме утверждения (не цитата, не пересказ)", "artifact_sign": "факт|событие|предпочтение", "level": 1-5, "tags": ["тег"]}}
+    {{"content": "ИЗВЛЕЧЁННЫЙ ФАКТ в форме утверждения", "artifact_sign": "факт|событие|предпочтение", "level": 1-5, "tags": ["тег"]}}
   ],
   "insights": [
     {{"content": "ВЫВОД, намерение или изменение состояния пользователя", "artifact_sign": "гипотеза|решение", "level": 1-5, "tags": ["тег"]}}
   ],
   "dialog_summary": {{
-    "content": "Краткое саммари диалога (2-3 предложения) + ключевые моменты",
+    "content": "Краткое саммари диалога (2-3 предложения)",
     "artifact_sign": "диалог",
     "level": 2,
     "tags": ["тег"]
   }}
 }}
 
-КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
-
-1. CORE — только БАЗОВАЯ информация о личности:
-   ✅ "Имя пользователя: Никита", "Пользователь — программист", "Пользователь любит кофе"
-   ❌ "Пользователь сказал, что играет в шахматы" — это не ядро, это факт
-   level всегда 5
-
-2. FACTS — ИЗВЛЕЧЁННЫЕ ФАКТЫ в форме УТВЕРЖДЕНИЙ:
-   ✅ "Пользователь играет в Dota 2", "У пользователя есть кот Барсик", "Пользователь выиграл в камень-ножницы-бумага 2 из 3"
-   ❌ "Пользователь сказал, что играет в Dota 2" — это пересказ, не факт
-   ❌ Весь диалог или длинная история
-   level: 3 для обычных, 4 для важных, 5 для критичных
-
-3. INSIGHTS — выводы и намерения:
-   ✅ "Пользователь хочет сменить работу", "Пользователь устал от проекта"
-   artifact_sign: гипотеза (если не уверен) или решение (если явно сказал)
-
-4. DIALOG_SUMMARY — одно короткое саммари:
-   "Обсуждали игры. Пользователь рассказал про победу в камень-ножницы-бумага над другом."
-
-5. КАЖДЫЙ элемент — одна короткая мысль. Не делай длинные абзацы!
-
+ПРАВИЛА:
+1. CORE — только БАЗОВАЯ информация о личности. level всегда 5.
+2. FACTS — ИЗВЛЕЧЁННЫЕ ФАКТЫ в форме УТВЕРЖДЕНИЙ. level: 3-5.
+3. INSIGHTS — выводы и намерения. artifact_sign: гипотеза или решение.
+4. DIALOG_SUMMARY — одно короткое саммари.
+5. КАЖДЫЙ элемент — одна короткая мысль.
 6. Если в слое нет данных — верни пустой массив [].
-
 7. Отвечай ТОЛЬКО валидным JSON на русском языке, без markdown."""
             
             print("🤖 Отправляю запрос в LLM...")
             
             analysis_response = self.llm.generate(
                 messages=[{"role": "user", "content": analysis_prompt}],
-                system_prompt="Ты эксперт по извлечению знаний. Превращай сырые диалоги в чёткие факты. Отвечай ТОЛЬКО валидным JSON на русском."
+                system_prompt="Ты эксперт по извлечению знаний. Отвечай ТОЛЬКО валидным JSON на русском."
             )
             
-            print(f"\n📥 Ответ получен ({len(analysis_response)} символов)")
+            print(f"\n Ответ получен ({len(analysis_response)} символов)")
             self.after(0, lambda: self._append_message("Система", "💾 Сохраняю извлеченные знания..."))
             
             try:
@@ -306,64 +368,55 @@ class MainWindow(ctk.CTk):
                     
                     saved = {"core": 0, "fact": 0, "insight": 0, "dialog": 0}
                     
-                    # CORE
                     for item in data.get("core", []):
                         if item.get("content"):
                             result = self.memory.remember(
                                 content=item["content"], mem_type="core",
                                 artifact_sign=item.get("artifact_sign", "факт"),
-                                tags=item.get("tags", []),
-                                level=5,
-                                check_duplicate=True,
+                                tags=item.get("tags", []), level=5, check_duplicate=True,
                             )
                             if result:
                                 saved["core"] += 1
                                 print(f"  ✅ [core] {item['content']}")
                     
-                    # FACTS
                     for item in data.get("facts", []):
                         if item.get("content"):
                             result = self.memory.remember(
                                 content=item["content"], mem_type="fact",
                                 artifact_sign=item.get("artifact_sign", "факт"),
-                                tags=item.get("tags", []),
-                                level=item.get("level", 3),
+                                tags=item.get("tags", []), level=item.get("level", 3),
                                 check_duplicate=True,
                             )
                             if result:
                                 saved["fact"] += 1
                                 print(f"  ✅ [fact] {item['content']}")
                     
-                    # INSIGHTS
                     for item in data.get("insights", []):
                         if item.get("content"):
                             result = self.memory.remember(
                                 content=item["content"], mem_type="insight",
                                 artifact_sign=item.get("artifact_sign", "гипотеза"),
-                                tags=item.get("tags", []),
-                                level=item.get("level", 3),
+                                tags=item.get("tags", []), level=item.get("level", 3),
                                 check_duplicate=True,
                             )
                             if result:
                                 saved["insight"] += 1
                                 print(f"  ✅ [insight] {item['content']}")
                     
-                    # DIALOG SUMMARY
                     ds = data.get("dialog_summary", {})
                     if ds.get("content"):
                         result = self.memory.remember(
                             content=ds["content"], mem_type="dialog",
                             artifact_sign="диалог",
                             title=f"Диалог {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-                            tags=ds.get("tags", []),
-                            level=ds.get("level", 2),
+                            tags=ds.get("tags", []), level=ds.get("level", 2),
                             check_duplicate=False,
                         )
                         if result:
                             saved["dialog"] += 1
                             print(f"  ✅ [dialog] {ds['content'][:80]}")
                     
-                    print(f"\n📊 Итого: {saved}")
+                    print(f"\n Итого: {saved}")
                     
                     msg = f"✅ Сохранено: core={saved['core']}, facts={saved['fact']}, insights={saved['insight']}, dialogs={saved['dialog']}"
                     self.after(0, lambda m=msg: self._append_message("Система", m))
@@ -371,14 +424,14 @@ class MainWindow(ctk.CTk):
                     self.after(0, self._clear_session_history)
                     
                 else:
-                    print(f"❌ JSON не найден")
+                    print(f" JSON не найден")
                     self.after(0, lambda: self._append_message("Система", "❌ Модель не вернула JSON"))
                     
             except json.JSONDecodeError as e:
                 error_msg = str(e)
                 print(f"❌ Ошибка парсинга: {error_msg}")
                 print(f"📄 Ответ: {analysis_response}")
-                self.after(0, lambda msg=error_msg: self._append_message("Система", f"❌ Ошибка JSON: {msg}"))
+                self.after(0, lambda msg=error_msg: self._append_message("Система", f" Ошибка JSON: {msg}"))
                 
         except Exception as e:
             error_msg = str(e)
@@ -424,22 +477,22 @@ class MainWindow(ctk.CTk):
             if selected_model and selected_model != self.llm.model:
                 self.llm.model = selected_model
             
-            self.after(0, lambda: self.status_label.configure(text="⏳ Думаю...", text_color="yellow"))
+            persona = self.persona_manager.get_current()
+            persona_name = persona.get("name", "Ассистент") if persona else "Ассистент"
+            
+            self.after(0, lambda: self.status_label.configure(text=f"⏳ {persona.get('emoji', '')} Думаю...", text_color="yellow"))
             
             system_prompt = self._build_system_prompt()
             
-            # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: разный поиск для разных типов вопросов
             asking_about_dialogs = self._is_asking_about_past_dialogs(prompt)
             
             if asking_about_dialogs:
                 print(f"\n🔍 ВОПРОС О ПРОШЛЫХ РАЗГОВОРАХ: '{prompt}'")
-                # Ищем в диалогах + фактах
                 relevant = self.memory.recall_for_answer(prompt)
                 dialogs = self.memory.recall_about_dialogs(prompt, n_results=2)
                 all_relevant = relevant + dialogs
             else:
                 print(f"\n🔍 ОБЫЧНЫЙ ВОПРОС: '{prompt}'")
-                # Ищем ТОЛЬКО facts и insights (без диалогов!)
                 all_relevant = self.memory.recall_for_answer(prompt)
             
             print(f"📊 Найдено релевантных: {len(all_relevant)}")
@@ -450,29 +503,28 @@ class MainWindow(ctk.CTk):
                 for mem in all_relevant:
                     mem_type = mem["metadata"].get("type", "unknown")
                     level = mem["metadata"].get("level", 3)
-                    sign = mem["metadata"].get("artifact_sign", "")
                     score = mem.get("relevance_score", 0)
                     
                     icon = {"core": "👤", "fact": "📝", "insight": "💡", "dialog": "💬"}.get(mem_type, "")
-                    system_prompt += f"{icon} [{mem_type}|{sign}|lvl{level}|score{score:.1f}]: {mem['content']}\n"
+                    system_prompt += f"{icon} [{mem_type}|lvl{level}|score{score:.1f}]: {mem['content']}\n"
                     
                     print(f"  {icon} [{mem_type}|lvl{level}|{score:.1f}] {mem['content'][:80]}")
                 
                 system_prompt += "\n=== КОНЕЦ ===\n"
                 
                 if asking_about_dialogs:
-                    system_prompt += "\nПользователь спрашивает о прошлых разговорах. Ответь конкретно, что обсуждали.\n"
+                    system_prompt += "\nПользователь спрашивает о прошлых разговорах. Ответь конкретно.\n"
                 else:
-                    system_prompt += "\nИспользуй воспоминания естественно. НЕ перечисляй всё подряд. Отвечай кратко и по делу.\n"
+                    system_prompt += "\nИспользуй воспоминания естественно. НЕ перечисляй всё подряд.\n"
             
             response = self.llm.generate(
                 messages=self.current_session_history,
                 system_prompt=system_prompt
             )
             
-            self.after(0, lambda: self.status_label.configure(text="✅ Готов", text_color="green"))
+            self.after(0, lambda: self.status_label.configure(text=f"✅ {persona.get('emoji', '🤖')} Готов", text_color="green"))
             
-            self._append_message("Ассистент", response)
+            self._append_message(persona_name, response)
             self.current_session_history.append({"role": "assistant", "content": response})
             
         except Exception as e:
@@ -496,7 +548,7 @@ class MainWindow(ctk.CTk):
         
         self.memory_list.configure(state="normal")
         self.memory_list.delete("1.0", "end")
-        self.memory_list.insert("end", f"🔍 Поиск: {query}\n\n")
+        self.memory_list.insert("end", f" Поиск: {query}\n\n")
         
         results = self.memory.obsidian.search(query, mem_type=mem_type, min_level=1)
         
@@ -508,11 +560,10 @@ class MainWindow(ctk.CTk):
                 content = mem['content']
                 cat = mem["metadata"].get("type", "unknown")
                 level = mem["metadata"].get("level", 3)
-                sign = mem["metadata"].get("artifact_sign", "")
                 
                 icon = {"core": "👤", "fact": "📝", "insight": "💡", "dialog": "💬"}.get(cat, "📄")
                 
-                self.memory_list.insert("end", f"{i}. {icon} [{cat}|{sign}|lvl{level}|{score:.1f}]\n")
+                self.memory_list.insert("end", f"{i}. {icon} [{cat}|lvl{level}|{score:.1f}]\n")
                 self.memory_list.insert("end", f"   {content}\n\n")
         
         self.memory_list.configure(state="disabled")
@@ -526,7 +577,7 @@ class MainWindow(ctk.CTk):
         
         self.memory_list.insert("end", f"📚 Всего: {obsidian_stats['total_memories']}\n")
         for cat, count in obsidian_stats.get("by_type", {}).items():
-            icon = {"core": "👤", "fact": "📝", "insight": "💡", "dialog": "💬"}.get(cat, "📄")
+            icon = {"core": "👤", "fact": "", "insight": "💡", "dialog": "💬"}.get(cat, "")
             self.memory_list.insert("end", f"  {icon} {cat}: {count}\n")
         self.memory_list.insert("end", "\n")
         
@@ -549,7 +600,7 @@ class MainWindow(ctk.CTk):
         self.memory_list.configure(state="normal")
         self.memory_list.delete("1.0", "end")
         
-        self.memory_list.insert("end", "📊 Статистика\n")
+        self.memory_list.insert("end", " Статистика\n")
         self.memory_list.insert("end", "=" * 40 + "\n\n")
         
         self.memory_list.insert("end", f"Всего: {obsidian_stats['total_memories']}\n")
@@ -557,7 +608,7 @@ class MainWindow(ctk.CTk):
         
         self.memory_list.insert("end", "По типам:\n")
         for cat, count in obsidian_stats["by_type"].items():
-            icon = {"core": "👤", "fact": "📝", "insight": "💡", "dialog": "💬"}.get(cat, "📄")
+            icon = {"core": "👤", "fact": "", "insight": "💡", "dialog": "💬"}.get(cat, "")
             self.memory_list.insert("end", f"  {icon} {cat}: {count}\n")
         
         self.memory_list.insert("end", "\nПо статусам:\n")

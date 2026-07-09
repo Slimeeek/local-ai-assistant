@@ -133,6 +133,7 @@ temp/
 *.h5
 *.pb
 models/
+personas/
 !models/.gitkeep
 
 # ============================================
